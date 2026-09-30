@@ -1,0 +1,70 @@
+name: lone_link
+description: A hybrid decentralized messaging application using BLE mesh and Internet transport.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State Management
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+
+  # Navigation
+  go_router: ^14.2.0
+
+  # BLE
+  flutter_blue_plus: ^1.31.0
+
+  # Database
+  drift: ^2.14.1
+  sqlite3_flutter_libs: ^0.5.18
+  path_provider: ^2.1.1
+  path: ^1.8.3
+
+  # Crypto
+  pointycastle: ^3.7.4
+  flutter_secure_storage: ^9.0.0
+  convert: ^3.1.1
+
+  # Models & Serialization
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.8.1
+  equatable: ^2.0.5
+
+  # Utilities
+  uuid: ^4.2.2
+  logger: ^2.0.2
+  connectivity_plus: ^5.0.2
+  battery_plus: ^5.0.3
+  permission_handler: ^11.1.0
+  collection: ^1.18.0
+  crypto: ^3.0.3
+  intl: ^0.19.0
+
+  # UI
+  google_fonts: ^6.1.0
+  fl_chart: ^0.65.0
+  flutter_animate: ^4.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+  # Code generation
+  build_runner: ^2.4.7
+  freezed: ^2.4.5
+  json_serializable: ^6.7.1
+  drift_dev: ^2.14.1
+  riverpod_generator: ^2.3.9
+  mockito: ^5.4.4
+  mocktail: ^1.0.1
+
+flutter:
+  uses-material-design: true
+
