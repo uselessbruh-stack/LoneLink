@@ -2,16 +2,17 @@
 ///
 /// Shows discovered BLE peers with signal strength, connection state,
 /// battery level, and bridge eligibility.
-/// The scan button triggers real BLE discovery (Phase 2).
+/// Uses real BLE scanning via flutter_blue_plus.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:lone_link/presentation/theme/app_theme.dart';
-import 'package:lone_link/presentation/providers/providers.dart';
 import 'package:lone_link/presentation/widgets/shared_widgets.dart';
 import 'package:lone_link/domain/entities/enums.dart';
+import 'package:lone_link/networking/transport/ble_provider.dart';
+import 'package:lone_link/networking/transport/transport.dart';
 
 class NearbyPeersScreen extends ConsumerStatefulWidget {
   const NearbyPeersScreen({super.key});
@@ -21,39 +22,35 @@ class NearbyPeersScreen extends ConsumerStatefulWidget {
 }
 
 class _NearbyPeersScreenState extends ConsumerState<NearbyPeersScreen> {
-  bool _isScanning = false;
+  String? _statusMessage;
 
   Future<void> _startScan() async {
-    // TODO(Phase 2): Connect to BLE transport's startDiscovery()
-    // This will:
-    // 1. Check BLE permissions (permission_handler)
-    // 2. Check if BLE is enabled
-    // 3. Start flutter_blue_plus scan
-    // 4. Filter for LONE LINK service UUID
-    // 5. Emit PeerDiscoveredEvent for each found device
-    // 6. Auto-stop after kBleScanDurationSeconds
-    //
-    // For Phase 1, we show the scan animation and empty state.
+    final controller = ref.read(bleControllerProvider);
 
-    setState(() => _isScanning = true);
+    setState(() => _statusMessage = null);
 
-    // Simulate scan duration
-    await Future.delayed(const Duration(seconds: 3));
+    // Listen for status changes to show feedback
+    final transport = ref.read(bleTransportProvider);
 
-    if (mounted) {
-      setState(() => _isScanning = false);
+    if (transport.status == TransportStatus.unavailable) {
+      setState(() => _statusMessage = 'Bluetooth is turned off. Please enable Bluetooth.');
+      return;
     }
+
+    await controller.initializeAndScan();
   }
 
   @override
   Widget build(BuildContext context) {
-    final peersAsync = ref.watch(peersStreamProvider);
+    final isScanning = ref.watch(bleScanningProvider);
+    final discoveredPeers = ref.watch(discoveredPeersProvider);
+    final bleStatus = ref.watch(bleStatusProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Nearby Peers'),
         actions: [
-          if (_isScanning)
+          if (isScanning)
             const Padding(
               padding: EdgeInsets.only(right: 16),
               child: SizedBox(
@@ -70,46 +67,119 @@ class _NearbyPeersScreenState extends ConsumerState<NearbyPeersScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // BLE Status banner
+          bleStatus.when(
+            data: (status) {
+              if (status == TransportStatus.unavailable) {
+                return _StatusBanner(
+                  message: 'Bluetooth is off',
+                  icon: Icons.bluetooth_disabled,
+                  color: LoneLinkColors.error,
+                );
+              }
+              return const SizedBox.shrink();
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+
+          // Status message (permission errors, etc.)
+          if (_statusMessage != null)
+            _StatusBanner(
+              message: _statusMessage!,
+              icon: Icons.warning_amber_rounded,
+              color: LoneLinkColors.warning,
+            ),
+
           // Scan button area
           Padding(
             padding: const EdgeInsets.all(16),
             child: SizedBox(
               width: double.infinity,
               child: _ScanButton(
-                isScanning: _isScanning,
-                onPressed: _isScanning ? null : _startScan,
+                isScanning: isScanning,
+                onPressed: isScanning ? null : _startScan,
               ),
             ),
           ),
 
-          const SectionHeader(title: 'Discovered Peers'),
+          // Scan results count
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const SectionHeader(title: 'Discovered Peers'),
+                const Spacer(),
+                if (discoveredPeers.isNotEmpty)
+                  Text(
+                    '${discoveredPeers.length} found',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: LoneLinkColors.darkTextTertiary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
 
           // Peer list
           Expanded(
-            child: peersAsync.when(
-              data: (peers) {
-                if (peers.isEmpty) {
-                  return EmptyStateWidget(
+            child: discoveredPeers.isEmpty
+                ? EmptyStateWidget(
                     icon: Icons.radar,
-                    title: _isScanning ? 'Scanning...' : 'No peers found',
-                    subtitle: _isScanning
+                    title: isScanning ? 'Scanning...' : 'No peers found',
+                    subtitle: isScanning
                         ? 'Looking for nearby LONE LINK devices'
                         : 'Tap "Scan for Peers" to discover nearby devices.\n'
-                            'Make sure Bluetooth is enabled on both devices.',
-                  );
-                }
+                            'Make sure Bluetooth is enabled on both devices\n'
+                            'and both are running LONE LINK.',
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: discoveredPeers.length,
+                    itemBuilder: (context, index) {
+                      final peer = discoveredPeers[index];
+                      return _PeerTile(
+                        peer: peer,
+                        onConnect: () {
+                          final controller = ref.read(bleControllerProvider);
+                          controller.connectToPeer(peer.id);
+                        },
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: peers.length,
-                  itemBuilder: (context, index) {
-                    final peer = peers[index];
-                    return _PeerTile(peer: peer);
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => Center(child: Text('Error: $error')),
+class _StatusBanner extends StatelessWidget {
+  final String message;
+  final IconData icon;
+  final Color color;
+
+  const _StatusBanner({
+    required this.message,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: color.withValues(alpha: 0.15),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -176,39 +246,29 @@ class _ScanButton extends StatelessWidget {
 }
 
 class _PeerTile extends StatelessWidget {
-  final dynamic peer;
+  final DiscoveredPeer peer;
+  final VoidCallback onConnect;
 
-  const _PeerTile({required this.peer});
+  const _PeerTile({required this.peer, required this.onConnect});
 
   @override
   Widget build(BuildContext context) {
-    final String name = peer.displayName ?? 'Unknown Device';
-    final String stateStr = peer.connectionState ?? 'disconnected';
-    final int? rssi = peer.rssi;
-    final int? battery = peer.batteryLevel;
-    final bool hasInternet = peer.hasInternet ?? false;
-    final String roleStr = peer.role ?? 'client';
-
-    final connectionState = PeerConnectionState.values.firstWhere(
-      (s) => s.name == stateStr,
-      orElse: () => PeerConnectionState.disconnected,
-    );
-
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Stack(
           children: [
-            _buildAvatar(name),
+            _buildAvatar(peer.displayName),
             Positioned(
               bottom: 0,
               right: 0,
-              child: ConnectionDot(state: connectionState, size: 12),
+              child: ConnectionDot(state: peer.connectionState, size: 12),
             ),
           ],
         ),
         title: Text(
-          name,
+          peer.displayName,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Column(
@@ -217,89 +277,72 @@ class _PeerTile extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
-                // Signal strength
-                if (rssi != null) ...[
-                  SignalStrengthIndicator(rssi: rssi, size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${rssi}dBm',
+                SignalStrengthIndicator(rssi: peer.rssi, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  '${peer.rssi} dBm',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: LoneLinkColors.darkTextTertiary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _stateColor(peer.connectionState).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    peer.connectionState.name,
                     style: TextStyle(
-                      fontSize: 11,
-                      color: LoneLinkColors.darkTextTertiary,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _stateColor(peer.connectionState),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                ],
-
-                // Battery
-                if (battery != null) ...[
-                  Icon(
-                    battery > 60
-                        ? Icons.battery_full
-                        : battery > 20
-                            ? Icons.battery_3_bar
-                            : Icons.battery_1_bar,
-                    size: 14,
-                    color: battery > 20 ? LoneLinkColors.success : LoneLinkColors.error,
-                  ),
-                  const SizedBox(width: 2),
-                  Text(
-                    '$battery%',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: LoneLinkColors.darkTextTertiary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-
-                // Bridge eligibility
-                if (hasInternet)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: LoneLinkColors.bridgeColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.swap_horiz, size: 10, color: LoneLinkColors.bridgeColor),
-                        const SizedBox(width: 3),
-                        Text(
-                          'Bridge',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: LoneLinkColors.bridgeColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                ),
               ],
             ),
           ],
         ),
-        trailing: connectionState == PeerConnectionState.connected
+        trailing: peer.connectionState == PeerConnectionState.connected
             ? TextButton(
                 onPressed: () {
-                  // TODO(Phase 2): Start conversation with this peer
+                  // TODO(Phase 3): Navigate to chat with this peer
                 },
                 child: const Text('Chat'),
               )
             : OutlinedButton(
-                onPressed: () {
-                  // TODO(Phase 2): Connect to this peer via BLE
-                },
+                onPressed: peer.connectionState == PeerConnectionState.connecting
+                    ? null
+                    : onConnect,
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: LoneLinkColors.primary),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
-                child: const Text('Connect'),
+                child: Text(
+                  peer.connectionState == PeerConnectionState.connecting
+                      ? 'Connecting...'
+                      : 'Connect',
+                ),
               ),
       ),
     );
+  }
+
+  Color _stateColor(PeerConnectionState state) {
+    switch (state) {
+      case PeerConnectionState.connected:
+        return LoneLinkColors.success;
+      case PeerConnectionState.connecting:
+        return LoneLinkColors.warning;
+      case PeerConnectionState.discovered:
+        return LoneLinkColors.primary;
+      case PeerConnectionState.disconnected:
+      case PeerConnectionState.failed:
+        return LoneLinkColors.darkTextTertiary;
+    }
   }
 
   Widget _buildAvatar(String name) {

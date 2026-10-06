@@ -1,4 +1,4 @@
-/// LONE LINK — Result Type Tests
+// LONE LINK — Result Type Tests
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lone_link/core/result/result.dart';
 import 'package:lone_link/core/errors/failures.dart';

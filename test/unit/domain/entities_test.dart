@@ -1,6 +1,6 @@
-/// LONE LINK — Domain Entity Tests
-///
-/// Unit tests for core domain entities and value objects.
+// LONE LINK — Domain Entity Tests
+//
+// Unit tests for core domain entities and value objects.
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lone_link/domain/entities/entities.dart';

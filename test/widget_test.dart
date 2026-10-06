@@ -1,6 +1,6 @@
-/// LONE LINK — Widget Test (smoke test)
-///
-/// Verifies the app can be instantiated without errors.
+// LONE LINK — Widget Test (smoke test)
+//
+// Verifies the app can be instantiated without errors.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lone_link/presentation/app.dart';
